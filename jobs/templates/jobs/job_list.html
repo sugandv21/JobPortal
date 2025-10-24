@@ -1,0 +1,127 @@
+{% extends 'jobs/base.html' %}
+{% block title %}Jobs - JobPortal{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Job Openings</h1>
+
+  {# Show Post Job only to employers (ensure your Profile is auto-created via signals) #}
+  {% if user.is_authenticated and user.profile.is_employer %}
+    <a href="{% url 'jobs:job_create' %}" class="btn btn-primary">Post New Job</a>
+  {% endif %}
+</div>
+
+<form method="get" class="row g-2 mb-4">
+  <div class="col-md-5">
+    <input name="q" value="{{ request.GET.q|default:'' }}" class="form-control" placeholder="Keyword, company or description" aria-label="Search jobs">
+  </div>
+  <div class="col-md-4">
+    <input name="location" value="{{ request.GET.location|default:'' }}" class="form-control" placeholder="Location" aria-label="Location">
+  </div>
+  <div class="col-md-3 d-grid">
+    <button class="btn btn-outline-primary">Search</button>
+  </div>
+</form>
+
+<div class="row">
+  {% for job in jobs %}
+    <div class="col-md-6 mb-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-body d-flex flex-column">
+          <h5 class="card-title mb-1">{{ job.title }}</h5>
+          <h6 class="card-subtitle mb-2 text-muted">
+            {{ job.company }}{% if job.location %} • {{ job.location }}{% endif %}
+          </h6>
+
+          {# Truncate description visually; full shown on detail page #}
+          <p class="card-text mb-3" style="max-height:4.5em; overflow:hidden; text-overflow:ellipsis;">
+            {{ job.description }}
+          </p>
+
+          <div class="mt-auto d-flex justify-content-between align-items-center">
+            <a href="{% url 'jobs:job_detail' job.pk %}" class="btn btn-sm btn-primary">View</a>
+
+            <div class="text-end">
+              <small class="text-muted d-block">Posted {{ job.created_at|date:"M d, Y" }}</small>
+              {% if user.is_authenticated and not user.profile.is_employer %}
+                <small class="d-block"><a href="{% url 'jobs:job_apply' job.pk %}">Apply</a></small>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% empty %}
+    <div class="col-12">
+      <div class="alert alert-info mb-0">No jobs found matching your criteria.</div>
+    </div>
+  {% endfor %}
+</div>
+
+{# Pagination: preserve q & location params and show numbered links with ellipses #}
+<nav aria-label="Job list pagination" class="mt-3">
+  {% with q=request.GET.q|urlencode location=request.GET.location|urlencode %}
+    {% if is_paginated %}
+      <ul class="pagination justify-content-center mb-0">
+
+        {# Previous #}
+        {% if page_obj.has_previous %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if location %}&location={{ location }}{% endif %}">Previous</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">Previous</span></li>
+        {% endif %}
+
+        {# First page link (always show) #}
+        {% if page_obj.number == 1 %}
+          <li class="page-item active"><span class="page-link">1</span></li>
+        {% else %}
+          <li class="page-item"><a class="page-link" href="?page=1{% if q %}&q={{ q }}{% endif %}{% if location %}&location={{ location }}{% endif %}">1</a></li>
+        {% endif %}
+
+        {# Left ellipsis if current page is far from first #}
+        {% if page_obj.number > 4 %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+
+        {# Middle page numbers: show +/-2 range around current #}
+        {% for num in paginator.page_range %}
+          {% if num > 1 and num < paginator.num_pages %}
+            {% if num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
+              {% if num == page_obj.number %}
+                <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+              {% else %}
+                <li class="page-item"><a class="page-link" href="?page={{ num }}{% if q %}&q={{ q }}{% endif %}{% if location %}&location={{ location }}{% endif %}">{{ num }}</a></li>
+              {% endif %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+
+        {# Right ellipsis if current page is far from last #}
+        {% if page_obj.number < paginator.num_pages|add:'-3' %}
+          <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+
+        {# Last page link (if more than one page) #}
+        {% if paginator.num_pages > 1 %}
+          {% if page_obj.number == paginator.num_pages %}
+            <li class="page-item active"><span class="page-link">{{ paginator.num_pages }}</span></li>
+          {% else %}
+            <li class="page-item"><a class="page-link" href="?page={{ paginator.num_pages }}{% if q %}&q={{ q }}{% endif %}{% if location %}&location={{ location }}{% endif %}">{{ paginator.num_pages }}</a></li>
+          {% endif %}
+        {% endif %}
+
+        {# Next #}
+        {% if page_obj.has_next %}
+          <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if location %}&location={{ location }}{% endif %}">Next</a>
+          </li>
+        {% else %}
+          <li class="page-item disabled"><span class="page-link">Next</span></li>
+        {% endif %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+</nav>
+{% endblock %}

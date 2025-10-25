@@ -1,13 +1,16 @@
 from django.contrib import admin
-from .models import Profile, Job, Application
+from .models import Profile, Job, Application, Interview
 
+class InterviewInline(admin.TabularInline):
+    model = Interview
+    extra = 0
+    readonly_fields = ("created_by","created_at","updated_at","invite_sent")
 
 class ApplicationInline(admin.TabularInline):
     model = Application
     extra = 0
     readonly_fields = ("applicant", "resume", "status", "applied_at")
     fields = ("applicant", "resume", "status", "applied_at")
-
 
 @admin.register(Job)
 class JobAdmin(admin.ModelAdmin):
@@ -18,19 +21,23 @@ class JobAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at",)
     ordering = ("-created_at",)
 
-
 @admin.register(Application)
 class ApplicationAdmin(admin.ModelAdmin):
     list_display = ("job", "applicant", "status", "applied_at")
     list_filter = ("status", "applied_at")
     search_fields = ("job__title", "applicant__username", "applicant__email")
     readonly_fields = ("applied_at",)
-    actions = ["mark_as_review", "mark_as_accepted", "mark_as_rejected"]
+    actions = ["mark_as_review", "mark_as_shortlisted", "mark_as_accepted", "mark_as_rejected"]
 
     def mark_as_review(self, request, queryset):
         updated = queryset.update(status="review")
         self.message_user(request, f"{updated} application(s) marked as Under Review.")
     mark_as_review.short_description = "Mark selected applications as Under Review"
+
+    def mark_as_shortlisted(self, request, queryset):
+        updated = queryset.update(status="shortlisted")
+        self.message_user(request, f"{updated} application(s) marked as Shortlisted.")
+    mark_as_shortlisted.short_description = "Mark selected applications as Shortlisted"
 
     def mark_as_accepted(self, request, queryset):
         updated = queryset.update(status="accepted")
@@ -42,6 +49,11 @@ class ApplicationAdmin(admin.ModelAdmin):
         self.message_user(request, f"{updated} application(s) marked as Rejected.")
     mark_as_rejected.short_description = "Mark selected applications as Rejected"
 
+@admin.register(Interview)
+class InterviewAdmin(admin.ModelAdmin):
+    list_display = ("application","scheduled_at","mode","status","invite_sent","created_by")
+    list_filter = ("status","mode","scheduled_at","created_by")
+    search_fields = ("application__applicant__username","application__job__title","meet_link","location")
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):

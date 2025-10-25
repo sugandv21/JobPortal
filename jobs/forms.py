@@ -2,9 +2,10 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import get_user_model
 
-from .models import Job, Application, Profile
+from .models import Job, Application, Profile, Interview
 
 User = get_user_model()
+
 
 
 class RegisterForm(UserCreationForm):
@@ -85,3 +86,22 @@ class ApplicationForm(forms.ModelForm):
         if resume.size > self.MAX_UPLOAD_SIZE:
             raise forms.ValidationError("Resume file size must be under 5 MB.")
         return resume
+
+
+class InterviewForm(forms.ModelForm):
+    class Meta:
+        model = Interview
+        fields = ("scheduled_at","mode","location","meet_link","notes")
+        widgets = {
+            "scheduled_at": forms.DateTimeInput(attrs={"type":"datetime-local"}),
+            "notes": forms.Textarea(attrs={"rows":4}),
+        }
+
+    def clean(self):
+        data = super().clean()
+        # optional: basic guard against past scheduling
+        scheduled_at = data.get("scheduled_at")
+        from django.utils import timezone
+        if scheduled_at and scheduled_at < timezone.now():
+            raise forms.ValidationError("Scheduled time must be in the future.")
+        return data

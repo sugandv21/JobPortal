@@ -1,0 +1,53 @@
+{% extends 'jobs/base.html' %}
+{% block title %}{% if object %}Edit Interview{% else %}Schedule Interview{% endif %} - JobPortal{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h3 class="card-title mb-3">{% if object %}Edit Interview{% else %}Schedule Interview{% endif %}</h3>
+
+        {% if form.non_field_errors %}
+          <div class="alert alert-danger">{{ form.non_field_errors }}</div>
+        {% endif %}
+
+        <form method="post" novalidate>
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label" for="{{ form.scheduled_at.id_for_label }}">Date & time</label>
+            {{ form.scheduled_at }}
+            {% if form.scheduled_at.errors %}<div class="form-text text-danger">{{ form.scheduled_at.errors|striptags }}</div>{% endif %}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="{{ form.mode.id_for_label }}">Mode</label>
+            {{ form.mode }}
+            {% if form.mode.errors %}<div class="form-text text-danger">{{ form.mode.errors|striptags }}</div>{% endif %}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="{{ form.location.id_for_label }}">Location (for in-person)</label>
+            {{ form.location }}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="{{ form.meet_link.id_for_label }}">Meet link / dial-in</label>
+            {{ form.meet_link }}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label" for="{{ form.notes.id_for_label }}">Notes</label>
+            {{ form.notes }}
+          </div>
+
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">{% if object %}Save{% else %}Schedule{% endif %}</button>
+            <a href="{% if object %}{% url 'jobs:job_detail' object.application.job.pk %}{% else %}{% url 'jobs:job_detail' view.application.job.pk %}{% endif %}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

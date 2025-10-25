@@ -5,13 +5,20 @@ from django.contrib import messages
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db.models import Q
-
+from django.utils import timezone
 from django.views.generic import CreateView, ListView, DetailView, UpdateView, DeleteView, View
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth import get_user_model
 
 from .models import Job, Application, Profile
 from .forms import RegisterForm, JobSearchForm, ApplicationForm, JobForm
+
+User = get_user_model()
+
+
+
+from .models import Interview
+from .forms import InterviewForm
 
 User = get_user_model()
 
@@ -88,8 +95,11 @@ class JobDetailView(DetailView):
         job = self.object
         ctx["applications"] = job.applications.all()
         ctx["has_applied"] = False
+        ctx["my_app"] = None
         if self.request.user.is_authenticated:
             ctx["has_applied"] = job.applications.filter(applicant=self.request.user).exists()
+            # prepare the user's application for this job (or None)
+            ctx["my_app"] = job.applications.filter(applicant=self.request.user).first()
         return ctx
 
 
@@ -224,3 +234,131 @@ class WithdrawApplicationView(LoginRequiredMixin, View):
         application.save()
         messages.success(request, "Application withdrawn.")
         return redirect("jobs:job_detail", pk=application.job.pk)
+
+
+class ShortlistApplicationView(LoginRequiredMixin, View):
+    """Employer can mark an application as Shortlisted (and auto-email the candidate)."""
+    def post(self, request, pk, *args, **kwargs):
+        app = get_object_or_404(Application, pk=pk)
+        if app.job.poster != request.user:
+            messages.error(request, "You are not allowed to modify this application.")
+            return redirect("jobs:job_detail", pk=app.job.pk)
+        app.status = Application.STATUS_SHORTLIST
+        app.save(update_fields=["status", "updated_at"])
+
+        # notify candidate
+        if app.applicant.email:
+            try:
+                send_mail(
+                    subject=f"You’ve been shortlisted for {app.job.title}",
+                    message=(
+                        f"Hi {app.applicant.username},\n\n"
+                        f"You have been shortlisted for \"{app.job.title}\" at {app.job.company}.\n"
+                        "We will contact you with interview details soon."
+                    ),
+                    from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+                    recipient_list=[app.applicant.email],
+                    fail_silently=False,
+                )
+            except Exception as e:
+                print("Shortlist email error:", e)
+
+        messages.success(request, "Application marked as Shortlisted and candidate notified.")
+        return redirect("jobs:job_detail", pk=app.job.pk)
+
+class InterviewCreateView(LoginRequiredMixin, CreateView):
+    model = Interview
+    form_class = InterviewForm
+    template_name = "jobs/interview_form.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        self.application = get_object_or_404(Application, pk=kwargs.get("application_pk"))
+        # only the job poster can schedule
+        if self.application.job.poster != request.user:
+            messages.error(request, "Only the job poster can schedule interviews.")
+            return redirect("jobs:job_detail", pk=self.application.job.pk)
+        return super().dispatch(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        form.instance.application = self.application
+        form.instance.created_by = self.request.user
+        self.object = form.save()
+
+        # email both applicant and employer
+        applicant_email = (self.application.applicant.email or "").strip()
+        employer_email = (self.application.job.poster.email or "").strip()
+        when_str = timezone.localtime(self.object.scheduled_at).strftime("%b %d, %Y %I:%M %p")
+        details = f"Mode: {self.object.get_mode_display()}\n"
+        if self.object.location: details += f"Location: {self.object.location}\n"
+        if self.object.meet_link: details += f"Link: {self.object.meet_link}\n"
+        details += f"\nNotes:\n{self.object.notes or '-'}"
+
+        subj = f"Interview scheduled for {self.application.job.title}"
+        body_candidate = (
+            f"Hi {self.application.applicant.username},\n\n"
+            f"Your interview for \"{self.application.job.title}\" at {self.application.job.company} "
+            f"is scheduled on {when_str}.\n\n{details}\n"
+        )
+        body_employer = (
+            f"Hi {self.request.user.username},\n\n"
+            f"You scheduled an interview with {self.application.applicant.username} for "
+            f"\"{self.application.job.title}\" on {when_str}.\n\n{details}\n"
+        )
+        try:
+            if applicant_email:
+                send_mail(subj, body_candidate, getattr(settings,"DEFAULT_FROM_EMAIL", None), [applicant_email], fail_silently=False)
+            if employer_email:
+                send_mail(subj, body_employer, getattr(settings,"DEFAULT_FROM_EMAIL", None), [employer_email], fail_silently=False)
+            self.object.invite_sent = True
+            self.object.save(update_fields=["invite_sent"])
+        except Exception as e:
+            print("Interview email error:", e)
+
+        messages.success(self.request, "Interview scheduled and notifications sent.")
+        return redirect("jobs:job_detail", pk=self.application.job.pk)
+
+class InterviewUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
+    model = Interview
+    form_class = InterviewForm
+    template_name = "jobs/interview_form.html"
+
+    def test_func(self):
+        interview = self.get_object()
+        return interview.application.job.poster == self.request.user
+
+    def form_valid(self, form):
+        self.object = form.save()
+        messages.success(self.request, "Interview updated.")
+        return redirect("jobs:job_detail", pk=self.object.application.job.pk)
+
+class InterviewCancelView(LoginRequiredMixin, UserPassesTestMixin, View):
+    def test_func(self, interview):  # helper
+        return interview.application.job.poster == self.request.user
+
+    def post(self, request, pk, *args, **kwargs):
+        interview = get_object_or_404(Interview, pk=pk)
+        if not self.test_func(interview):
+            messages.error(request, "You cannot cancel this interview.")
+            return redirect("jobs:job_detail", pk=interview.application.job.pk)
+        interview.status = "canceled"
+        interview.save(update_fields=["status","updated_at"])
+
+        # notify candidate
+        if interview.application.applicant.email:
+            try:
+                send_mail(
+                    subject=f"Interview canceled: {interview.application.job.title}",
+                    message=(
+                        f"Hi {interview.application.applicant.username},\n\n"
+                        f"The interview scheduled for \"{interview.application.job.title}\" has been canceled.\n"
+                        "You may receive a new schedule soon."
+                    ),
+                    from_email=getattr(settings,"DEFAULT_FROM_EMAIL", None),
+                    recipient_list=[interview.application.applicant.email],
+                    fail_silently=False,
+                )
+            except Exception as e:
+                print("Interview cancel email error:", e)
+
+        messages.success(request, "Interview canceled and candidate notified.")
+        return redirect("jobs:job_detail", pk=interview.application.job.pk)

@@ -151,13 +151,13 @@
                       <div class="d-flex gap-2">
                         <a class="btn btn-sm btn-outline-secondary"
                            href="{% url 'jobs:interview_update' iv.pk %}">Edit</a>
-                        <form method="post" action="{% url 'jobs:interview_cancel' iv.pk %}">
+                        <!-- <form method="post" action="{% url 'jobs:interview_cancel' iv.pk %}">
                           {% csrf_token %}
                           <button class="btn btn-sm btn-outline-danger"
                                   {% if iv.status == 'canceled' %}disabled{% endif %}>
                             Cancel
                           </button>
-                        </form>
+                        </form> -->
                       </div>
                     </div>
                   {% endfor %}
@@ -209,3 +209,4 @@
   </div>
 </div>
 {% endblock %}
+
